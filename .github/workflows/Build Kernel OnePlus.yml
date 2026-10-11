@@ -6,7 +6,7 @@ on:
         type: choice
         description: "配置文件//Configuration file"
         required: true
-        default: oneplus_ace2_pro_b
+        default: oneplus_15
         options:
           - oneplus_nord_n30_se_5g_v
           - oneplus_10r_v
@@ -27,10 +27,13 @@ on:
           - oneplus_ace3_b
           - oneplus_open_b
           - oneplus_nord_ce4_b
+          - oneplus_n6_b
+          - oneplus_n6x_b
           - oneplus_12_b
           - oneplus_pad_go_2_b
           - oneplus_turbo_6x_b
           - oneplus_nord_ce4_lite_5g_b
+          - oneplus_nord_ce6
           - oneplus_nord_ce6_lite_b
           - oneplus_turbo_6v
           - oneplus_nord_4_b
@@ -94,7 +97,7 @@ on:
         type: string
         description: "自定义构建时间(输入F使用UTCT或-1关闭)//Custom build time (Enter F to use UTCT, or -1 to disable)"
         required: false
-        default: "Fri Dec 12 11:37:03 UTC 2025"
+        default: "Wed Jul 15 11:18:49 UTC 2026"
       KSU_META:
         type: string
         description: "管理器分支名(必填)/内置分支名(必填)/自定义版本标识(留空不修改)/回退分支提交哈希版本(留空不修改)//Manager Branch name (Required) / Builtin branch name (Required) / Custom version identifier (Leave blank to not modify) / Rollback branch commit hash version (Leave blank to not modify)"
@@ -136,7 +139,7 @@ on:
         default: true
       CCM:
         type: boolean
-        description: "是否启用网络拥塞控制与管理机制(BBR+ECN)？//Enable network congestion control and management mechanism (BBR+ECN)?"
+        description: "是否启用网络拥塞控制与管理机制(BBRv1+BBRv3+ECN)？//Enable network congestion control and management mechanism (BBRv1+BBRv3+ECN)?"
         required: true
         default: true
       UNICODE_BYPASS:
@@ -187,18 +190,18 @@ jobs:
       CCACHE_MAXSIZE: 5G
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Maximize Build Space
         if: ${{ github.event.inputs.SPACE_NOCLEAN == 'false' }}
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
+        env:
+          ROOT_RESERVE_MB: '8192'
+          TEMP_RESERVE_MB: '2048'
+          REMOVE_DOTNET: 'true'
+          REMOVE_ANDROID: 'true'
+          REMOVE_HASKELL: 'true'
+          REMOVE_CODEQL: 'true'
+        run: bash scripts/maximize-build-space.sh
 
       - name: Configure Git
         run: |
@@ -286,7 +289,7 @@ jobs:
           # 提取 CPU
           CPU=$(echo "$REVISION" | sed -E 's#^(oneplus|realme|oppo)/([^_]+).*#\2#')
           # 提取 ANDROID_VERSION
-          ANDROID_VERSION=$(echo "$REVISION" | grep -oP '\d{1,2}\.\d{1,2}(\.\d{1,2})?')
+          ANDROID_VERSION=$(echo "$REVISION" | grep -oP '\d+\.\d+(\.\d+)?')
           if [[ -n "$CPU" && -n "$ANDROID_VERSION" ]]; then
             echo "✅ CPU=$CPU, ANDROID_VERSION=$ANDROID_VERSION"
             echo "CPU=$CPU" >> $GITHUB_ENV
@@ -392,14 +395,21 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.apt-pkg-cache
-          key: apt-cache-${{ runner.os }}-${{ github.ref_name }}-v5
+          key: apt-cache-${{ runner.os }}-${{ github.ref_name }}-v6
 
       - name: Install Dependencies
         run: |
-          export APT_PACKAGES="python3 git curl libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix kmod libdw-dev elfutils dwarves kotlin"
+          export APT_PACKAGES="python3 git curl libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix kmod libdw-dev elfutils dwarves"
           bash "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/cache_apt_pkgs.sh" ~/.apt-pkg-cache
 
-      - name: Install Ccache-ECS
+      - name: Setup Kotlin
+        run: |
+          KOTLIN_VERSION="2.4.10"
+          curl -sL "https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip" -o kotlinc.zip
+          unzip -q kotlinc.zip -d "$HOME"
+          echo "$HOME/kotlinc/bin" >> "$GITHUB_PATH"
+
+      - name: Setup Ccache-ECS
         run: |
          LIB_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/lib"
          sudo cp -f "$LIB_DIR/ccache" /usr/bin/ccache && sudo chmod +x /usr/bin/ccache
@@ -410,7 +420,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-16.8
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-17.0
 
       - name: Restore ThinLTO Cache
         if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' && github.event.inputs.FAST_BUILD == 'true' }}
@@ -418,7 +428,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ github.workspace }}/kernel_workspace/.thinlto-cache
-          key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-16.8
+          key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-17.0
 
       - name: Initialize Ccache
         if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' }}
@@ -552,8 +562,14 @@ jobs:
             RUSTC_VERSION=$(grep '^RUSTC_VERSION=' ./common/build.config.constants | cut -d'=' -f2 || true)
           fi
           if [[ -n "$RUSTC_VERSION" ]]; then
-            echo "✅ RUSTC_VERSION=$RUSTC_VERSION"
+            echo "✅ RUSTC_VERSION(原始)=$RUSTC_VERSION"
+            RUSTC_DIR_VERSION=$(echo "$RUSTC_VERSION" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+            if [[ -z "$RUSTC_DIR_VERSION" ]]; then
+              RUSTC_DIR_VERSION="$RUSTC_VERSION"
+            fi
+            echo "✅ RUSTC_DIR_VERSION(用于目录匹配)=$RUSTC_DIR_VERSION"
             echo "RUSTC_VERSION=$RUSTC_VERSION" >> $GITHUB_ENV
+            echo "RUSTC_DIR_VERSION=$RUSTC_DIR_VERSION" >> $GITHUB_ENV
             echo "ENABLE_RUST=true" >> $GITHUB_ENV
           else
             echo "✅ RUSTC_VERSION 未找到，Rust 编译已禁用"
@@ -720,7 +736,7 @@ jobs:
       - name: Apply Fake Patches
         if: ${{ github.event.inputs.SUSFS_META != '-1' }}
         run: |
-          kotlinc -script "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" apply "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
+          kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" apply "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
 
       - name: Apply Patches SukiSU Ultra
         env:
@@ -782,10 +798,11 @@ jobs:
           source $REJ_CHECKER
           check_rejects .
 
-      - name: Revert Fake Patches
+      - name: Revert and Postfix Fake Patches
         if: ${{ github.event.inputs.SUSFS_META != '-1' }}
         run: |
-          kotlinc -script "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" revert "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
+          kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" postfix "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
+          kotlin "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/PatchFakePatches.kts" revert "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/common"
 
       # OGKI转换GKI，无需修改 dtbo 开机
       - name: Apply Convert HMBIRD_OGKI to HMBIRD_GKI
@@ -803,6 +820,21 @@ jobs:
           echo "正在打OGKI转换GKI补丁"
           patch -p1 -F 3 < "${PATCH_DIR}/hmbird_patch.patch" || true
           echo "OGKI转换GKI_patch完成"
+          source $REJ_CHECKER
+          check_rejects .
+
+      - name: Apply BBRv3
+        if: ${{ github.event.inputs.CCM == 'true' && env.KMI != 'android16-6.12' }}
+        run: |
+          PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches"
+          cd kernel_workspace/kernel_platform/common
+          patch -p1 < "${PATCH_DIR}/bbrv3/0001-net-tcp-backport-BBRv3-to-$KMI.patch"
+          if [ "$KMI" = "android12-5.10" ]; then
+            if ! grep -qF 'int proc_dou8vec_minmax(' ./include/linux/sysctl.h; then
+              patch -p1 < "${PATCH_DIR}/bbrv3/sysctl_add_proc_dou8vec_minmax.patch"
+              patch -p1 < "${PATCH_DIR}/bbrv3/sysctl_fix_data-races_in_proc_dou8vec_minmax.patch"
+            fi
+          fi
           source $REJ_CHECKER
           check_rejects .
 
@@ -829,7 +861,7 @@ jobs:
           mkdir -p drivers/rekernel
           cp -r "${RE_DIR}"/* drivers/rekernel/
           if [ -f BUILD.bazel ]; then
-            sed -i '/"kernel_aarch64": {/,/"kernel_aarch64_16k": {/ s|"module_implicit_outs": get_gki_modules_list("arm64")|"module_implicit_outs": get_gki_modules_list("arm64") + ["drivers/rekernel/rekernel.ko"]|' BUILD.bazel
+            sed -i '0,/name = "kernel_aarch64",/{/module_implicit_outs/s|,$| + ["drivers/rekernel/rekernel.ko"],|}' BUILD.bazel
           fi
 
       - name: Apply DROID_SPACES
@@ -1042,6 +1074,9 @@ jobs:
           if [ "${{ github.event.inputs.CCM }}" = "true" ]; then
             set_hide_config "CONFIG_TCP_CONG_ADVANCED=y"
             set_config "CONFIG_TCP_CONG_BBR=y"
+            if [ "$KMI" != "android16-6.12" ]; then
+              set_config "CONFIG_TCP_CONG_BBR3=y"
+            fi
             set_config "CONFIG_NET_SCH_FQ=y"
             set_config "CONFIG_TCP_CONG_BIC=n"
             set_config "CONFIG_TCP_CONG_WESTWOOD=n"
@@ -1080,6 +1115,7 @@ jobs:
             set_config "CONFIG_DEVTMPFS=y"
             set_config "CONFIG_PID_NS=y"
             set_config "CONFIG_IPC_NS=y"
+            set_config "CONFIG_USER_NS=y"
             set_config "CONFIG_NAMESPACES=y"
             set_config "CONFIG_POSIX_MQUEUE=y"
             set_config "CONFIG_NETFILTER_XT_TARGET_REJECT=y"
@@ -1125,6 +1161,13 @@ jobs:
           fi
 
           # 构建依赖项调整及优化
+          if [ "$KERNEL_VERSION" = "5.15" ] && [[ "$CPU" == mt* ]]; then
+            set_config "CONFIG_OPLUS_SYSTEM_KERNEL=y"
+            set_config "CONFIG_OPLUS_FEATURE_CMDLINE=m"
+            set_config "CONFIG_OPLUS_FEATURE_OPLUSBOOT=m"
+            set_config "CONFIG_OPLUS_FEATURE_BUILDVARIANT=m"
+            set_config "CONFIG_OPLUS_FEATURE_OPROJECT=m"
+          fi
           if [[ "$ENABLE_RUST" == "true" ]]; then
             set_config "CONFIG_RUST=y"
             set_config "CONFIG_ANDROID_BINDER_IPC_RUST=m"
@@ -1276,7 +1319,7 @@ jobs:
 
           # RUSTC 检测与 fallback
           if [[ "$ENABLE_RUST" == "true" ]]; then
-            RUSTC_BIN="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$RUST_TOOLS_PREBUILT_NAME/rust/linux-x86/$RUSTC_VERSION/bin/rustc"
+            RUSTC_BIN="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$RUST_TOOLS_PREBUILT_NAME/rust/linux-x86/$RUSTC_DIR_VERSION/bin/rustc"
             if [ ! -x "$RUSTC_BIN" ]; then
               RUSTC_BIN="$(which rustc 2>/dev/null)"
               [ -x "$RUSTC_BIN" ] && echo "⚠️ rustc fallback to PATH: $RUSTC_BIN"
@@ -1458,7 +1501,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          MANAGER_ARTIFACT=manager
+          MANAGER_ARTIFACT=Manager
 
           echo "Using branch: $KSU_MANAGER_BRANCH"
           echo "Downloading artifact: $MANAGER_ARTIFACT"
@@ -1578,14 +1621,14 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-16.8
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-17.0
 
       - name: Save ThinLTO Cache
         if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' && github.event.inputs.FAST_BUILD == 'true' && steps.cache_size_check.outputs.thinlto_save == 'true' && steps.restore-thinlto.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
         with:
           path: ${{ github.workspace }}/kernel_workspace/.thinlto-cache
-          key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-16.8
+          key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-17.0
 
       - name: Post-build Disk Check
         run: df -h
